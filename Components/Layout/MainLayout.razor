@@ -1,0 +1,50 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+
+<div class="page">
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/">Azure Bot Cloner</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container mt-4">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item">
+                        <a href="/">Home</a>
+                    </li>
+                    @{
+                        var segments = NavigationManager.Uri.Split('/').Skip(3);
+                        var accumulated = "";
+                        @foreach (var segment in segments)
+                        {
+                            accumulated += "/" + segment;
+                            <li class="breadcrumb-item @(segment == segments.Last() ? "active" : "")">
+                                @if (segment != segments.Last())
+                                {
+                                    <a href="@accumulated">@segment</a>
+                                }
+                                else
+                                {
+                                    @segment
+                                }
+                            </li>
+                        }
+                    }
+                </ol>
+            </nav>
+
+            @Body
+        </div>
+    </main>
+</div>
+
+<style>
+    .breadcrumb-item + .breadcrumb-item::before {
+        content: ">";
+    }
+</style>

@@ -1,0 +1,68 @@
+﻿@page "/botlist"
+@using Azure.ResourceManager.BotService
+@inject AzureBotServiceHelper BotHelper
+@inject NavigationManager NavigationManager
+@inject ILogger<BotList> Logger
+
+<h3>Available Bots</h3>
+
+@if (bots == null)
+{
+    <p>Loading...</p>
+}
+else if (!bots.Any())
+{
+    <p>No bots found or there was an error loading the bots. Please check your configuration and try again.</p>
+}
+else
+{
+    <div class="list-group">
+        @foreach (var bot in bots)
+        {
+            <button class="list-group-item list-group-item-action" @onclick="@(() => SelectBot(bot))">
+                @bot.Data.Name
+            </button>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@code {
+    private IEnumerable<BotResource> bots;
+    private string errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            bots = await BotHelper.GetBotsAsync();
+            if (!bots.Any())
+            {
+                errorMessage = "No bots were found. Please check your Azure configuration.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error fetching bots");
+            errorMessage = "An error occurred while fetching the bots. Please try again later.";
+        }
+    }
+
+    public void SelectBot(BotResource bot)
+    {
+        if (bot != null && !string.IsNullOrEmpty(bot.Data.Name))
+        {
+            NavigationManager.NavigateTo($"/clonebot/{bot.Data.Name}");
+        }
+        else
+        {
+            errorMessage = "Unable to select the bot. The bot data is invalid.";
+        }
+    }
+}

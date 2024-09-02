@@ -1,0 +1,58 @@
+﻿@page "/clonebot/{BotName}"
+@using Azure.ResourceManager
+@using Azure.ResourceManager.BotService
+@using System.ComponentModel.DataAnnotations
+@inject ArmClient ArmClient
+@inject NavigationManager NavigationManager
+
+<h3>Clone Bot: @BotName</h3>
+
+<EditForm Model="@cloneModel" OnValidSubmit="@HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="form-group">
+        <label for="newBotName">New Bot Name:</label>
+        <InputText id="newBotName" @bind-Value="cloneModel.NewBotName" class="form-control" />
+    </div>
+
+    <h4>Select Channels:</h4>
+    @foreach (var channel in availableChannels)
+    {
+        <div class="form-check">
+            <InputCheckbox @bind-Value="channel.IsSelected" id="@($"channel_{channel.Name}")" class="form-check-input" />
+            <label class="form-check-label" for="@($"channel_{channel.Name}")">@channel.Name</label>
+        </div>
+    }
+
+    <button type="submit" class="btn btn-primary mt-3">Clone Bot</button>
+</EditForm>
+
+@code {
+    [Parameter]
+    public string BotName { get; set; }
+
+    private CloneModel cloneModel = new CloneModel();
+    private List<ChannelModel> availableChannels = new List<ChannelModel>
+    {
+        new ChannelModel { Name = "DirectLine", IsSelected = false },
+        new ChannelModel { Name = "WebChat", IsSelected = false }
+    };
+
+    private async Task HandleValidSubmit()
+    {
+        NavigationManager.NavigateTo($"/deploystatus/{cloneModel.NewBotName}?source={BotName}");
+    }
+
+    public class CloneModel
+    {
+        [Required]
+        public string NewBotName { get; set; }
+    }
+
+    public class ChannelModel
+    {
+        public string Name { get; set; }
+        public bool IsSelected { get; set; }
+    }
+}

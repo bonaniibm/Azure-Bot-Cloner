@@ -1,0 +1,53 @@
+﻿@page "/channelconfig/{BotName}/{ChannelName}"
+@using Azure.ResourceManager
+@using Azure.ResourceManager.BotService
+@using System.ComponentModel.DataAnnotations
+@inject ArmClient ArmClient
+
+<h3>Configure @ChannelName for @BotName</h3>
+
+<EditForm Model="@channelConfig" OnValidSubmit="@HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    @if (ChannelName == "DirectLine")
+    {
+        <div class="form-group">
+            <label for="secret">DirectLine Secret:</label>
+            <InputText id="secret" @bind-Value="channelConfig.Secret" class="form-control" />
+        </div>
+    }
+    else if (ChannelName == "WebChat")
+    {
+        <div class="form-group">
+            <label for="secret">WebChat Secret:</label>
+            <InputText id="secret" @bind-Value="channelConfig.Secret" class="form-control" />
+        </div>
+    }
+    <!-- Add more channel-specific configurations here -->
+
+    <button type="submit" class="btn btn-primary mt-3">Save Configuration</button>
+</EditForm>
+
+@code {
+    [Parameter]
+    public string BotName { get; set; }
+
+    [Parameter]
+    public string ChannelName { get; set; }
+
+    private ChannelConfigModel channelConfig = new ChannelConfigModel();
+
+    private async Task HandleValidSubmit()
+    {
+        // Implement channel configuration logic here
+        // Use ArmClient to update the bot's channel configuration
+    }
+
+    public class ChannelConfigModel
+    {
+        [Required]
+        public string Secret { get; set; }
+        // Add more properties for channel-specific configurations
+    }
+}
