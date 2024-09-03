@@ -1,10 +1,8 @@
 ﻿@page "/clonebot/{BotName}"
-@using Azure.ResourceManager
 @using Azure.ResourceManager.BotService
 @using System.ComponentModel.DataAnnotations
-@inject ArmClient ArmClient
+@using Azure_Bot_Cloner.Components
 @inject NavigationManager NavigationManager
-
 <h3>Clone Bot: @BotName</h3>
 
 <EditForm Model="@cloneModel" OnValidSubmit="@HandleValidSubmit">
@@ -20,9 +18,59 @@
     @foreach (var channel in availableChannels)
     {
         <div class="form-check">
-            <InputCheckbox @bind-Value="channel.IsSelected" id="@($"channel_{channel.Name}")" class="form-check-input" />
+            <InputCheckbox @bind-Value="channel.IsSelected" id="@($"channel_{channel.Name}")" class="form-check-input" disabled="@channel.IsDisabled" @onchange="@(() => ChannelSelectionChanged(channel))" />
             <label class="form-check-label" for="@($"channel_{channel.Name}")">@channel.Name</label>
         </div>
+
+        @if (channel.IsSelected)
+        {
+            @switch (channel.Name)
+            {
+                case "Alexa":
+                    <div class="form-group mt-2">
+                        <label for="alexaSkillId">Alexa Skill ID:</label>
+                        <InputText id="alexaSkillId" @bind-Value="channel.AlexaSkillId" class="form-control" />
+                        <ValidationMessage For="@(() => channel.AlexaSkillId)" />
+                    </div>
+                    break;
+                case "Email":
+                    <div class="form-group mt-2">
+                        <label for="emailAddress">Email Address:</label>
+                        <InputText id="emailAddress" @bind-Value="channel.EmailAddress" class="form-control" />
+                        <ValidationMessage For="@(() => channel.EmailAddress)" />
+                    </div>
+                    <div class="form-group mt-2">
+                        <label for="emailPassword">Password:</label>
+                        <InputText id="emailPassword" @bind-Value="channel.EmailPassword" class="form-control" type="password" />
+                        <ValidationMessage For="@(() => channel.EmailPassword)" />
+                    </div>
+                    break;
+                case "DirectLineSpeech":
+                    <div class="form-group mt-2">
+                        <label for="cognitiveServiceRegion">Cognitive Service Region:</label>
+                        <InputText id="cognitiveServiceRegion" @bind-Value="channel.CognitiveServiceRegion" class="form-control" />
+                        <ValidationMessage For="@(() => channel.CognitiveServiceRegion)" />
+                    </div>
+                    <div class="form-group mt-2">
+                        <label for="cognitiveServiceSubscriptionKey">Cognitive Service Subscription Key:</label>
+                        <InputText id="cognitiveServiceSubscriptionKey" @bind-Value="channel.CognitiveServiceSubscriptionKey" class="form-control" />
+                        <ValidationMessage For="@(() => channel.CognitiveServiceSubscriptionKey)" />
+                    </div>
+                    break;
+                case "Line":
+                    <div class="form-group mt-2">
+                        <label for="channelSecret">Channel Secret:</label>
+                        <InputText id="channelSecret" @bind-Value="channel.ChannelSecret" class="form-control" />
+                        <ValidationMessage For="@(() => channel.ChannelSecret)" />
+                    </div>
+                    <div class="form-group mt-2">
+                        <label for="channelAccessToken">Channel Access Token:</label>
+                        <InputText id="channelAccessToken" @bind-Value="channel.ChannelAccessToken" class="form-control" />
+                        <ValidationMessage For="@(() => channel.ChannelAccessToken)" />
+                    </div>
+                    break;
+            }
+        }
     }
 
     <button type="submit" class="btn btn-primary mt-3">Clone Bot</button>
@@ -35,13 +83,27 @@
     private CloneModel cloneModel = new CloneModel();
     private List<ChannelModel> availableChannels = new List<ChannelModel>
     {
-        new ChannelModel { Name = "DirectLine", IsSelected = false },
-        new ChannelModel { Name = "WebChat", IsSelected = false }
+        new ChannelModel { Name = "DirectLine", IsSelected = true, IsDisabled = true },
+        new ChannelModel { Name = "WebChat", IsSelected = true, IsDisabled = true },
+        new ChannelModel { Name = "Alexa", IsSelected = false },
+        new ChannelModel { Name = "Email", IsSelected = false },
+        new ChannelModel { Name = "DirectLineSpeech", IsSelected = false },
+        new ChannelModel { Name = "Line", IsSelected = false }
     };
 
-    private async Task HandleValidSubmit()
+    private void ChannelSelectionChanged(ChannelModel channel)
     {
-        NavigationManager.NavigateTo($"/deploystatus/{cloneModel.NewBotName}?source={BotName}");
+        channel.Validate();
+    }
+
+    private void HandleValidSubmit()
+    {
+        if (availableChannels.All(c => c.IsValid()))
+        {
+            var selectedChannels = availableChannels.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+            var channelData = availableChannels.Where(c => c.IsSelected).ToDictionary(c => c.Name, c => c.GetChannelData());
+            NavigationManager.NavigateTo($"/deploystatus/{cloneModel.NewBotName}?channels={string.Join(",", selectedChannels)}&channelData={Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(channelData))}");
+        }
     }
 
     public class CloneModel
@@ -50,9 +112,100 @@
         public string NewBotName { get; set; }
     }
 
-    public class ChannelModel
+    public class ChannelModel : IValidatableObject
     {
         public string Name { get; set; }
         public bool IsSelected { get; set; }
+        public bool IsDisabled { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Alexa Skill ID is required when Alexa channel is selected.")]
+        public string AlexaSkillId { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Email Address is required when Email channel is selected.")]
+        [EmailAddress(ErrorMessage = "Invalid email address.")]
+        public string EmailAddress { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Email Password is required when Email channel is selected.")]
+        public string EmailPassword { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Cognitive Service Region is required when DirectLineSpeech channel is selected.")]
+        public string CognitiveServiceRegion { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Cognitive Service Subscription Key is required when DirectLineSpeech channel is selected.")]
+        public string CognitiveServiceSubscriptionKey { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Channel Secret is required when Line channel is selected.")]
+        public string ChannelSecret { get; set; }
+
+        [RequiredIf("IsSelected", true, ErrorMessage = "Channel Access Token is required when Line channel is selected.")]
+        public string ChannelAccessToken { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (IsSelected)
+            {
+                switch (Name)
+                {
+                    case "Alexa":
+                        if (string.IsNullOrWhiteSpace(AlexaSkillId))
+                            yield return new ValidationResult("Alexa Skill ID is required when Alexa channel is selected.", new[] { nameof(AlexaSkillId) });
+                        break;
+                    case "Email":
+                        if (string.IsNullOrWhiteSpace(EmailAddress))
+                            yield return new ValidationResult("Email Address is required when Email channel is selected.", new[] { nameof(EmailAddress) });
+                        if (string.IsNullOrWhiteSpace(EmailPassword))
+                            yield return new ValidationResult("Email Password is required when Email channel is selected.", new[] { nameof(EmailPassword) });
+                        break;
+                    case "DirectLineSpeech":
+                        if (string.IsNullOrWhiteSpace(CognitiveServiceRegion))
+                            yield return new ValidationResult("Cognitive Service Region is required when DirectLineSpeech channel is selected.", new[] { nameof(CognitiveServiceRegion) });
+                        if (string.IsNullOrWhiteSpace(CognitiveServiceSubscriptionKey))
+                            yield return new ValidationResult("Cognitive Service Subscription Key is required when DirectLineSpeech channel is selected.", new[] { nameof(CognitiveServiceSubscriptionKey) });
+                        break;
+                    case "Line":
+                        if (string.IsNullOrWhiteSpace(ChannelSecret))
+                            yield return new ValidationResult("Channel Secret is required when Line channel is selected.", new[] { nameof(ChannelSecret) });
+                        if (string.IsNullOrWhiteSpace(ChannelAccessToken))
+                            yield return new ValidationResult("Channel Access Token is required when Line channel is selected.", new[] { nameof(ChannelAccessToken) });
+                        break;
+                }
+            }
+        }
+
+
+        public bool IsValid()
+        {
+            if (!IsSelected || IsDisabled)
+                return true;
+            var validationContext = new ValidationContext(this);
+            var results = new List<ValidationResult>();
+            return Validator.TryValidateObject(this, validationContext, results, true);
+        }
+
+        public void Validate()
+        {
+            if (IsSelected)
+            {
+                var validationContext = new ValidationContext(this);
+                Validator.ValidateObject(this, validationContext, true);
+            }
+        }
+
+        public object GetChannelData()
+        {
+            switch (Name)
+            {
+                case "Alexa":
+                    return new { AlexaSkillId };
+                case "Email":
+                    return new { EmailAddress, EmailPassword };
+                case "DirectLineSpeech":
+                    return new { CognitiveServiceRegion, CognitiveServiceSubscriptionKey };
+                case "Line":
+                    return new { ChannelSecret, ChannelAccessToken };
+                default:
+                    return null;
+            }
+        }
     }
 }

@@ -19,9 +19,14 @@ else
     <div class="list-group">
         @foreach (var bot in bots)
         {
-            <button class="list-group-item list-group-item-action" @onclick="@(() => SelectBot(bot))">
-                @bot.Data.Name
-            </button>
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <a href="@($"/clonebot/{bot.Data.Name}")" class="flex-grow-1">
+                    @bot.Data.Name
+                </a>
+                <button class="btn btn-primary btn-sm" @onclick="@(() => SelectBot(bot))">
+                    Select
+                </button>
+            </div>
         }
     </div>
 }
@@ -54,7 +59,7 @@ else
         }
     }
 
-    public void SelectBot(BotResource bot)
+    private void SelectBot(BotResource bot)
     {
         if (bot != null && !string.IsNullOrEmpty(bot.Data.Name))
         {

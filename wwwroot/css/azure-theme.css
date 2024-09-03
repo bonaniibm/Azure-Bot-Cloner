@@ -94,6 +94,14 @@ body {
     color: var(--azure-blue);
 }
 
+    .breadcrumb-item.active {
+        color: var(--azure-gray);
+    }
+
+    .breadcrumb-item + .breadcrumb-item::before {
+        content: ">";
+        color: var(--azure-gray);
+    }
 .breadcrumb-separator {
     color: var(--azure-gray);
     margin: 0 0.5rem;

@@ -24,12 +24,14 @@
         <li class="list-group-item">@message</li>
     }
 </ul>
+
 @if (isCloning)
 {
     <div class="alert alert-info mt-3">
         Cloning web app in progress. This may take a few minutes...
     </div>
 }
+
 @if (isCompleted)
 {
     <button class="btn btn-primary mt-3" @onclick="ShowSecrets">Show Channel Secrets</button>
@@ -39,16 +41,24 @@
 {
     <div class="mt-3">
         <h4>Channel Secrets:</h4>
-        <h5>DirectLine:</h5>
-        <p>Extension Key 1: @directLineKey1</p>
-        <p>Extension Key 2: @directLineKey2</p>
-        <h5>WebChat:</h5>
-        <p>Key 1: @webChatKey1</p>
-        <p>Key 2: @webChatKey2</p>
-        <h5>WebChat Embed Code:</h5>
-        <pre>@webChatEmbedCode</pre>
+        @if (selectedChannels.Contains("DirectLine"))
+        {
+            <h5>DirectLine:</h5>
+            <p>Extension Key 1: @directLineKey1</p>
+            <p>Extension Key 2: @directLineKey2</p>
+        }
+        @if (selectedChannels.Contains("WebChat"))
+        {
+            <h5>WebChat:</h5>
+            <p>Key 1: @webChatKey1</p>
+            <p>Key 2: @webChatKey2</p>
+            <h5>WebChat Embed Code:</h5>
+            <pre>@webChatEmbedCode</pre>
+        }
+        <!-- Add sections for other channels TBD -->
     </div>
 }
+
 
 @code {
     [Parameter]
@@ -58,6 +68,8 @@
     private List<string> statusMessages = new List<string>();
     private bool isCompleted = false;
     private bool isCloning = false;
+    private List<string> selectedChannels;
+    private Dictionary<string, object> channelData;
     private string sourceBotName;
     private bool showSecrets = false;
 
@@ -84,6 +96,14 @@
         clientSecret = Configuration["AzureAd:ClientSecret"];
         var uri = new Uri(NavigationManager.Uri);
         sourceBotName = System.Web.HttpUtility.ParseQueryString(uri.Query).Get("source") ?? "SharepointAIDemoCopilot";
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        selectedChannels = query["channels"]?.Split(',').ToList() ?? new List<string>();
+        var channelDataJson = query["channelData"];
+        if (!string.IsNullOrEmpty(channelDataJson))
+        {
+            channelData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(Uri.UnescapeDataString(channelDataJson));
+        }
+
         await StartDeployment();
     }
 
@@ -93,39 +113,78 @@
         {
             UpdateStatus($"Starting deployment process for new bot: {NewBotName}", 0);
 
-            var sourceWebAppData = await GetWebApp(sourceBotName, subscriptionId, resourceGroupName, tenantId, clientId, clientSecret);
-            UpdateStatus("Source web app retrieved.", 15);
+            var sourceWebAppData = await AzureBotServiceHelper.GetWebApp(sourceBotName, subscriptionId, resourceGroupName, tenantId, clientId, clientSecret);
+            UpdateStatus("Source web app retrieved.", 10);
 
             var graphApiHelper = new GraphApiHelper(clientId, tenantId, clientSecret);
             var (appId, appSecret) = await graphApiHelper.CreateAppRegistrationAsync(NewBotName);
             UpdateStatus("App registration created.", 20);
 
             isCloning = true;
-            UpdateStatus("Cloning web app...", 30);
-            var clonedWebAppData = await CloneWebApp(NewBotName, subscriptionId, resourceGroupName, sourceWebAppData, tenantId, clientId, clientSecret, appId, appSecret);
+            UpdateStatus("Cloning web app...", 25);
+            var clonedWebAppData = await AzureBotServiceHelper.CloneWebApp(NewBotName, subscriptionId, resourceGroupName, sourceWebAppData, tenantId, clientId, clientSecret, appId, appSecret);
             isCloning = false;
-            UpdateStatus($"Web app cloned: {clonedWebAppData.Name}", 50);
+            UpdateStatus($"Web app cloned: {clonedWebAppData.Name}", 40);
 
-            var sourceBot = await GetBot(sourceBotName, subscriptionId, resourceGroupName, tenantId, clientId, clientSecret);
-            UpdateStatus("Source bot retrieved.", 60);
+            var sourceBot = await AzureBotServiceHelper.GetBot(sourceBotName, subscriptionId, resourceGroupName, tenantId, clientId, clientSecret);
+            UpdateStatus("Source bot retrieved.", 50);
 
-            var newBot = await CreateBot(NewBotName, subscriptionId, resourceGroupName, sourceBot, tenantId, clientId, clientSecret, appId);
-            UpdateStatus("New bot created.", 75);
+            var newBot = await AzureBotServiceHelper.CreateBot(NewBotName, subscriptionId, resourceGroupName, sourceBot, tenantId, clientId, clientSecret, appId);
+            UpdateStatus("New bot created.", 60);
 
-            var directLineChannel = await CreateDirectLineChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret);
-            UpdateStatus("DirectLine channel created.", 90);
+            int channelProgress = 60;
+            int progressPerChannel = (100 - channelProgress) / selectedChannels.Count;
 
-            var webChatChannel = await CreateWebChatChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret);
-            UpdateStatus("WebChat channel created.", 100);
-            directLineKey1 = ((DirectLineChannel)directLineChannel.Properties).Properties.ExtensionKey1;
-            directLineKey2 = ((DirectLineChannel)directLineChannel.Properties).Properties.ExtensionKey2;
-            var webChatSites = ((WebChatChannel)webChatChannel.Properties).Properties.Sites;
-            if (webChatSites.Any())
+            foreach (var channel in selectedChannels)
             {
-                webChatKey1 = webChatSites[0].Key;
-                webChatKey2 = webChatSites[0].Key2;
+                switch (channel)
+                {
+                    case "DirectLine":
+                        var directLineChannel = await AzureBotServiceHelper.CreateDirectLineChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret);
+                        UpdateStatus("DirectLine channel created.", channelProgress += progressPerChannel);
+                        directLineKey1 = ((DirectLineChannel)directLineChannel.Properties).Properties.ExtensionKey1;
+                        directLineKey2 = ((DirectLineChannel)directLineChannel.Properties).Properties.ExtensionKey2;
+                        break;
+                    case "WebChat":
+                        var webChatChannel = await AzureBotServiceHelper.CreateWebChatChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret);
+                        UpdateStatus("WebChat channel created.", channelProgress += progressPerChannel);
+                        var webChatSites = ((WebChatChannel)webChatChannel.Properties).Properties.Sites;
+                        if (webChatSites.Any())
+                        {
+                            webChatKey1 = webChatSites[0].Key;
+                            webChatKey2 = webChatSites[0].Key2;
+                        }
+                        webChatEmbedCode = $"<iframe src='https://webchat.botframework.com/embed/{NewBotName}?s=YOUR_SECRET_HERE' style='min-width: 400px; width: 100%; min-height: 500px;'></iframe>";
+                        break;
+                    case "Alexa":
+                        var alexaSkillId = ((System.Text.Json.JsonElement)channelData["Alexa"]).GetProperty("AlexaSkillId").GetString();
+                        await AzureBotServiceHelper.CreateAlexaChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret, alexaSkillId);
+                        UpdateStatus("Alexa channel created.", channelProgress += progressPerChannel);
+                        break;
+                    case "Email":
+                        var emailData = (System.Text.Json.JsonElement)channelData["Email"];
+                        var emailAddress = emailData.GetProperty("EmailAddress").GetString();
+                        var emailPassword = emailData.GetProperty("EmailPassword").GetString();
+                        await AzureBotServiceHelper.CreateEmailChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret, emailAddress, emailPassword);
+                        UpdateStatus("Email channel created.", channelProgress += progressPerChannel);
+                        break;
+                    case "DirectLineSpeech":
+                        var dlsData = (System.Text.Json.JsonElement)channelData["DirectLineSpeech"];
+                        var cognitiveServiceRegion = dlsData.GetProperty("CognitiveServiceRegion").GetString();
+                        var cognitiveServiceSubscriptionKey = dlsData.GetProperty("CognitiveServiceSubscriptionKey").GetString();
+                        await AzureBotServiceHelper.CreateDirectLineSpeechChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret, cognitiveServiceRegion, cognitiveServiceSubscriptionKey);
+                        UpdateStatus("DirectLineSpeech channel created.", channelProgress += progressPerChannel);
+                        break;
+                    case "Line":
+                        var lineData = (System.Text.Json.JsonElement)channelData["Line"];
+                        var channelSecret = lineData.GetProperty("ChannelSecret").GetString();
+                        var channelAccessToken = lineData.GetProperty("ChannelAccessToken").GetString();
+                        await AzureBotServiceHelper.CreateLineChannel(NewBotName, subscriptionId, resourceGroupName, newBot, tenantId, clientId, clientSecret, channelSecret, channelAccessToken);
+                        UpdateStatus("Line channel created.", channelProgress += progressPerChannel);
+                        break;
+                }
             }
-            webChatEmbedCode = $"<iframe src='https://webchat.botframework.com/embed/{NewBotName}?s=YOUR_SECRET_HERE' style='min-width: 400px; width: 100%; min-height: 500px;'></iframe>";
+
             isCompleted = true;
             UpdateStatus($"Deployment of {NewBotName} completed successfully!", 100);
         }
@@ -146,142 +205,5 @@
     {
         showSecrets = true;
     }
-    static async Task<WebSiteData> GetWebApp(string name, string subscriptionId, string resourceGroupName, string tenantId, string clientId, string clientSecret)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        ResourceIdentifier resourceGroupResourceId = ResourceGroupResource.CreateResourceIdentifier(subscriptionId, resourceGroupName);
-        ResourceGroupResource resourceGroupResource = client.GetResourceGroupResource(resourceGroupResourceId);
-        WebSiteCollection collection = resourceGroupResource.GetWebSites();
-        WebSiteResource result = await collection.GetAsync(name);
-        return result.Data;
-    }
-    static async Task<WebSiteData> CloneWebApp(string name, string subscriptionId, string resourceGroupName, WebSiteData sourceWebApp, string tenantId, string clientId, string clientSecret,
-        string appId, string appSecret)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        ResourceIdentifier resourceGroupResourceId = ResourceGroupResource.CreateResourceIdentifier(subscriptionId, resourceGroupName);
-        ResourceGroupResource resourceGroupResource = client.GetResourceGroupResource(resourceGroupResourceId);
-        WebSiteCollection collection = resourceGroupResource.GetWebSites();
-        WebSiteData data = new(sourceWebApp.Location)
-            {
-                CloningInfo = new CloningInfo(sourceWebApp.Id)
-                {
-                    CanOverwrite = false,
-                    CloneCustomHostNames = true,
-                    CloneSourceControl = true,
-                    SourceWebAppLocation = sourceWebApp.Location,
-                    AppSettingsOverrides =
-            {
-            ["MicrosoftAppId"] = appId,
-            ["MicrosoftAppPassword"] = appSecret,
-            },
-                    ConfigureLoadBalancing = false,
-
-                },
-                Kind = "app",
-                AppServicePlanId = sourceWebApp.AppServicePlanId
-            };
-        ArmOperation<WebSiteResource> lro = await collection.CreateOrUpdateAsync(WaitUntil.Completed, name, data);
-        WebSiteResource result = lro.Value;
-
-        return result.Data;
-    }
-
-    static async Task<BotData> GetBot(string name, string subscriptionId, string resourceGroupName, string tenantId, string clientId, string clientSecret)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        ResourceIdentifier resourceGroupResourceId = ResourceGroupResource.CreateResourceIdentifier(subscriptionId, resourceGroupName);
-        ResourceGroupResource resourceGroupResource = client.GetResourceGroupResource(resourceGroupResourceId);
-        BotCollection collection = resourceGroupResource.GetBots();
-        string resourceName = name;
-        BotResource result = await collection.GetAsync(resourceName);
-        return result.Data;
-    }
-
-    static async Task<BotData> CreateBot(string name, string subscriptionId, string resourceGroupName, BotData sourceBotdata, string tenantId, string clientId, string clientSecret, string appId)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        ResourceIdentifier resourceGroupResourceId = ResourceGroupResource.CreateResourceIdentifier(subscriptionId, resourceGroupName);
-        ResourceGroupResource resourceGroupResource = client.GetResourceGroupResource(resourceGroupResourceId);
-        BotCollection collection = resourceGroupResource.GetBots();
-        BotData data = new(sourceBotdata.Location)
-            {
-                Properties = new BotProperties(name, new Uri($"https://{name}.azurewebsites.net/api/messages"), appId)
-                {
-                    Description = sourceBotdata.Properties?.Description,
-                    IconUri = sourceBotdata.Properties?.IconUri,
-                    DeveloperAppInsightKey = sourceBotdata.Properties?.DeveloperAppInsightKey,
-                    DeveloperAppInsightsApiKey = sourceBotdata.Properties?.DeveloperAppInsightsApiKey,
-                    DeveloperAppInsightsApplicationId = sourceBotdata.Properties?.DeveloperAppInsightsApplicationId,
-                    IsCmekEnabled = sourceBotdata.Properties?.IsCmekEnabled,
-                    CmekKeyVaultUri = sourceBotdata.Properties?.CmekKeyVaultUri,
-                    PublicNetworkAccess = sourceBotdata.Properties?.PublicNetworkAccess,
-                    IsLocalAuthDisabled = sourceBotdata.Properties?.IsLocalAuthDisabled,
-                    SchemaTransformationVersion = sourceBotdata.Properties?.SchemaTransformationVersion,
-                    OpenWithHint = sourceBotdata.Properties?.OpenWithHint
-                },
-                Sku = sourceBotdata.Sku,
-                Kind = sourceBotdata.Kind,
-                ETag = sourceBotdata.ETag,
-                Tags =
-{
-new KeyValuePair<string,string>(sourceBotdata.Tags?.FirstOrDefault().Key, sourceBotdata.Tags?.FirstOrDefault().Value)
-}
-            };
-        ArmOperation<BotResource> lro = await collection.CreateOrUpdateAsync(WaitUntil.Completed, name, data);
-        BotResource result = lro.Value;
-        return result.Data;
-    }
-
-    static async Task<BotChannelData> CreateDirectLineChannel(string botName, string subscriptionId, string resourceGroupName, BotData sourceBotdata, string tenantId, string clientId, string clientSecret)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        string resourceName = botName;
-        ResourceIdentifier botResourceId = BotResource.CreateResourceIdentifier(subscriptionId, resourceGroupName, resourceName);
-        BotResource bot = client.GetBotResource(botResourceId);
-        BotChannelCollection collection = bot.GetBotChannels();
-        BotChannelName channelName = BotChannelName.DirectLineChannel;
-        BotChannelData data = new(sourceBotdata.Location)
-            {
-                Properties = new DirectLineChannel()
-                {
-                    Properties = new DirectLineChannelProperties()
-                    {
-
-                    },
-                },
-            };
-        ArmOperation<BotChannelResource> lro = await collection.CreateOrUpdateAsync(WaitUntil.Completed, channelName, data);
-        BotChannelResource result = lro.Value;
-        return result.Data;
-    }
-
-    static async Task<BotChannelData> CreateWebChatChannel(string botName, string subscriptionId, string resourceGroupName, BotData sourceBotdata, string tenantId, string clientId, string clientSecret)
-    {
-        TokenCredential cred = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        ArmClient client = new(cred);
-        string resourceName = botName;
-        ResourceIdentifier botResourceId = BotResource.CreateResourceIdentifier(subscriptionId, resourceGroupName, resourceName);
-        BotResource bot = client.GetBotResource(botResourceId);
-        BotChannelCollection collection = bot.GetBotChannels();
-        BotChannelName channelName = BotChannelName.WebChatChannel;
-        BotChannelData data = new(sourceBotdata.Location)
-            {
-                Properties = new WebChatChannel()
-                {
-                    Properties = new WebChatChannelProperties()
-                    {
-
-                    }
-                },
-            };
-        ArmOperation<BotChannelResource> lro = await collection.CreateOrUpdateAsync(WaitUntil.Completed, channelName, data);
-        BotChannelResource result = lro.Value;
-        return result.Data;
-    }
+   
 }

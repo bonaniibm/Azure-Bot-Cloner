@@ -1,6 +1,5 @@
 ﻿@page "/"
-
-<PageTitle>Home - Azure Bot Cloner</PageTitle>
+@inject IJSRuntime JSRuntime
 
 <h1>Welcome to Azure Bot Cloner</h1>
 
@@ -29,11 +28,32 @@
     </div>
 </div>
 
-<div class="mt-4">
-    <h2>Getting Started</h2>
-    <ol>
-        <li>Navigate to the Bot List to view your existing bots.</li>
-        <li>Select a bot to clone or manage its channels.</li>
-        <li>Use the Secret Retrieval page to get channel secrets for embedding.</li>
-    </ol>
+<div class="mt-5">
+    <h2>Test Your Bot</h2>
+    <div class="form-group">
+        <label for="botEmbed">Paste your bot embed code here:</label>
+        <textarea class="form-control" id="botEmbed" rows="5" @bind="embedCode"></textarea>
+    </div>
+    <button class="btn btn-primary mt-2" @onclick="TestBot">Test Bot</button>
 </div>
+
+@if (showBotTest)
+{
+    <div class="mt-3">
+        <h3>Bot Test Area</h3>
+        <div id="botTestArea" style="height: 500px; border: 1px solid #ccc;"></div>
+    </div>
+}
+
+@code {
+    private string embedCode = "";
+    private bool showBotTest = false;
+
+    private async Task TestBot()
+    {
+        showBotTest = true;
+        StateHasChanged();
+        await Task.Delay(100);
+        await JSRuntime.InvokeVoidAsync("injectBotIframe", embedCode);
+    }
+}

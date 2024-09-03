@@ -1,5 +1,7 @@
 ﻿@inherits LayoutComponentBase
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@using Microsoft.JSInterop
 
 <div class="page">
     <header>
@@ -12,13 +14,15 @@
 
     <main>
         <div class="container mt-4">
-            <nav aria-label="breadcrumb">
+            @{
+                var segments = NavigationManager.Uri.Split('/').Skip(3);
+            }
+            <nav aria-label="breadcrumb" style="@(segments.FirstOrDefault() == "clonebot" ? "display:none;" : "")">
                 <ol class="breadcrumb">
                     <li class="breadcrumb-item">
                         <a href="/">Home</a>
                     </li>
                     @{
-                        var segments = NavigationManager.Uri.Split('/').Skip(3);
                         var accumulated = "";
                         @foreach (var segment in segments)
                         {
@@ -48,3 +52,26 @@
         content: ">";
     }
 </style>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                window.injectBotIframe = function (embedCode) {
+                    var botTestArea = document.getElementById('botTestArea');
+                    if (botTestArea) {
+                        botTestArea.innerHTML = embedCode;
+                        var iframe = botTestArea.querySelector('iframe');
+                        if (iframe) {
+                            iframe.style.width = '100%';
+                            iframe.style.height = '100%';
+                            iframe.style.border = 'none';
+                        }
+                    }
+                }
+            ");
+        }
+    }
+}
